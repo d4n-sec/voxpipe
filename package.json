@@ -1,6 +1,6 @@
 {
   "name": "@d4n-sec/voxpipe",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Transcribe video/audio to text via a ChatGPT/Codex subscription, with silence-aware chunking for long files.",
   "type": "module",
   "bin": {
