@@ -36,6 +36,22 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -e
+          publish() {
+            local target="$1" name="$2" version="$3"
+            local out
+            if out=$(npm publish "$target" --access public 2>&1); then
+              echo "$out" | tail -2
+              return 0
+            fi
+            # The read path (npm view) lags after a publish, so treat an
+            # "already published" write error as success instead of failing.
+            if echo "$out" | grep -q "previously published versions"; then
+              echo "skip (already published): ${name}@${version}"
+              return 0
+            fi
+            echo "$out"
+            return 1
+          }
           for dir in dist/npm/@d4n-sec/voxpipe-darwin-arm64 \
                      dist/npm/@d4n-sec/voxpipe-darwin-x64 \
                      dist/npm/@d4n-sec/voxpipe-linux-x64 \
@@ -44,23 +60,22 @@ jobs:
             export DIR="$dir"
             name=$(node -p "require(process.env.DIR + '/package.json').name")
             version=$(node -p "require(process.env.DIR + '/package.json').version")
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
-              echo "skip (already published): ${name}@${version}"
-            else
-              echo "publishing ${name}@${version}"
-              npm publish "$dir" --access public
-            fi
+            publish "$dir" "$name" "$version"
           done
       - name: Publish main package
         if: env.NPM_TOKEN != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          set -e
           version=$(node -p "require('./package.json').version")
-          if npm view "@d4n-sec/voxpipe@${version}" version >/dev/null 2>&1; then
+          if out=$(npm publish --access public 2>&1); then
+            echo "$out" | tail -2
+          elif echo "$out" | grep -q "previously published versions"; then
             echo "skip (already published): @d4n-sec/voxpipe@${version}"
           else
-            npm publish --access public
+            echo "$out"
+            exit 1
           fi
       - name: npm publish skipped
         if: env.NPM_TOKEN == ''
