@@ -24,6 +24,10 @@ const transcribeSchema = {
   model: z.string().optional().describe("Model name, default gpt-4o-transcribe."),
   backend: z.enum(["chatgpt", "command"]).optional().describe("Backend to use; defaults to config."),
   command: z.string().optional().describe("Command backend template with {file} {language} {model}."),
+  chunking: z
+    .enum(["auto", "none", "silence"])
+    .optional()
+    .describe("Chunking strategy; defaults to the backend/config."),
   outDir: z.string().optional().describe("Output directory for segmented runs; defaults to the server's --out-dir."),
 };
 

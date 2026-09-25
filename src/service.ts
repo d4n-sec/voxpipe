@@ -2,8 +2,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadCredentials } from "./auth";
 import { createBackend } from "./backends";
-import { loadConfig, type VoxpipeConfig } from "./config";
-import { previewInput, transcribe, type PreviewResult } from "./transcribe";
+import { loadConfig, type ChunkingConfig, type VoxpipeConfig } from "./config";
+import { previewInput, resolveChunking, transcribe, type PreviewResult } from "./transcribe";
 import type { InputResult, Progress, SegmentOptions } from "./types";
 
 export type CoreArgs = {
@@ -13,6 +13,7 @@ export type CoreArgs = {
   model?: string;
   backend?: string;
   command?: string;
+  chunking?: ChunkingConfig;
   outDir?: string;
 };
 
@@ -88,6 +89,10 @@ export async function runTranscribe(args: CoreArgs, options: RunOptions = {}): P
     outDir: args.outDir,
     silenceDb: config.silenceDb,
     silenceDur: config.silenceDur,
+    chunking: (() => {
+      const mode = args.chunking ?? config.chunking;
+      return mode === "auto" ? undefined : mode;
+    })(),
     onProgress: options.onProgress,
     signal: options.signal,
   });
@@ -96,9 +101,13 @@ export async function runTranscribe(args: CoreArgs, options: RunOptions = {}): P
 
 export function runPlan(args: PlanArgs): PreviewResult {
   const config = loadConfig({ env: process.env });
+  const backend = createBackend(args.backend ?? config.backend, { command: args.command ?? config.command });
+  const mode = args.chunking ?? config.chunking;
   return previewInput(args.path, {
     segment: segmentOptions(args, config),
     silenceDb: args.silenceDb ?? config.silenceDb,
     silenceDur: args.silenceDur ?? config.silenceDur,
+    chunking: resolveChunking(backend, mode === "auto" ? undefined : mode),
+    limits: backend.limits,
   });
 }

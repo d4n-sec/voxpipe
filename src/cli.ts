@@ -3,7 +3,7 @@ import { basename, extname, join, resolve } from "node:path";
 import { loadCredentials } from "./auth";
 import { createBackend } from "./backends";
 import { loadConfig, type VoxpipeConfig } from "./config";
-import { previewInput, transcribe } from "./transcribe";
+import { previewInput, resolveChunking, transcribe } from "./transcribe";
 import type { Progress, SegmentOptions } from "./types";
 
 type CliOptions = VoxpipeConfig & {
@@ -33,6 +33,7 @@ Options:
   -m, --model <name>          Model name, default gpt-4o-transcribe
       --backend <name>        chatgpt (default) or command
       --command <cmd>         Command backend; placeholders {file} {language} {model}
+      --chunking <mode>       auto (backend default) | none | silence
       --chunk-seconds <n>     Target chunk length, default 240
       --max-seconds <n>       Hard chunk ceiling, default 600
       --overlap-seconds <n>   Overlap when cutting blind, default 20
@@ -119,6 +120,12 @@ function parseArgs(argv: string[], base: VoxpipeConfig): CliOptions {
       case "--command":
         opts.command = next();
         break;
+      case "--chunking": {
+        const value = next();
+        if (value !== "auto" && value !== "none" && value !== "silence") usage(2);
+        opts.chunking = value;
+        break;
+      }
       case "--chunk-seconds":
         opts.targetSeconds = numeric(next(), 1, 3600);
         break;
@@ -229,12 +236,16 @@ async function runTranscribe(argv: string[]): Promise<void> {
   const progress = makeProgress(opts.json);
 
   if (opts.dryRun) {
+    const backend = createBackend(opts.backend, { command: opts.command });
+    const chunking = resolveChunking(backend, opts.chunking === "auto" ? undefined : opts.chunking);
     for (const input of opts.inputs) {
       const preview = previewInput(input, {
         segment: segmentOptions,
         silenceDb: opts.silenceDb,
         silenceDur: opts.silenceDur,
         keep: opts.keep,
+        chunking,
+        limits: backend.limits,
       });
       if (opts.json) {
         console.log(JSON.stringify({ type: "preview", ...preview }));
@@ -278,6 +289,7 @@ async function runTranscribe(argv: string[]): Promise<void> {
       keep: opts.keep,
       silenceDb: opts.silenceDb,
       silenceDur: opts.silenceDur,
+      chunking: opts.chunking === "auto" ? undefined : opts.chunking,
       onProgress: progress,
     });
 

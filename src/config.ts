@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+export type ChunkingConfig = "auto" | "none" | "silence";
+
 export type VoxpipeConfig = {
   language?: string;
   model?: string;
   backend: string;
   command?: string;
   prompt?: string;
+  chunking: ChunkingConfig;
   targetSeconds: number;
   maxSeconds: number;
   overlapSeconds: number;
@@ -21,6 +24,7 @@ export type VoxpipeConfig = {
 export function defaultConfig(): VoxpipeConfig {
   return {
     backend: "chatgpt",
+    chunking: "auto",
     targetSeconds: 240,
     maxSeconds: 600,
     overlapSeconds: 20,
@@ -86,6 +90,7 @@ const FILE_KEYS: Record<string, keyof VoxpipeConfig> = {
   backend: "backend",
   command: "command",
   prompt: "prompt",
+  chunking: "chunking",
   target_seconds: "targetSeconds",
   max_seconds: "maxSeconds",
   overlap_seconds: "overlapSeconds",
@@ -123,6 +128,7 @@ const ENV_KEYS: Record<string, keyof VoxpipeConfig> = {
   VOXPIPE_BACKEND: "backend",
   VOXPIPE_COMMAND: "command",
   VOXPIPE_PROMPT: "prompt",
+  VOXPIPE_CHUNKING: "chunking",
   VOXPIPE_TARGET_SECONDS: "targetSeconds",
   VOXPIPE_MAX_SECONDS: "maxSeconds",
   VOXPIPE_OVERLAP_SECONDS: "overlapSeconds",

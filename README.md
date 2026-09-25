@@ -69,6 +69,7 @@ voxpipe long.mp4 --json                # newline-delimited JSON events on stdout
 | `-m, --model <name>` | Model name | `gpt-4o-transcribe` |
 | `--backend <name>` | `chatgpt` or `command` | `chatgpt` |
 | `--command <cmd>` | Command for the `command` backend; placeholders `{file}` `{language}` `{model}` | |
+| `--chunking <mode>` | Chunking strategy: `auto` (backend default), `none`, or `silence` | `auto` |
 | `--chunk-seconds <n>` | Target chunk length | `240` |
 | `--max-seconds <n>` | Hard chunk ceiling | `600` |
 | `--overlap-seconds <n>` | Overlap when cutting blind | `20` |
@@ -76,7 +77,7 @@ voxpipe long.mp4 --json                # newline-delimited JSON events on stdout
 | `--silence-dur <n>` | Minimum silence length in seconds | `0.35` |
 | `--retry <n>` | Total attempts, 1–3 (1 = no retry) | `1` |
 | `--json` | Newline-delimited JSON events on stdout (progress → stderr otherwise) | |
-| `--dry-run` | Print the segmentation plan, no network | |
+| `--dry-run` | Print the segmentation plan (reflects the backend and `--chunking` policy), no network | |
 | `--keep` | Keep intermediate audio | |
 | `--keep-state` | Keep resume state after a successful run | |
 | `--config <path>` | Config file | `~/.config/voxpipe/config.toml` |
@@ -126,7 +127,7 @@ voxpipe mcp --out-dir /var/voxpipe/out --http --host 0.0.0.0 --port 9000
 
 Tools:
 
-- `transcribe` — args `{ path, language?, prompt?, model?, backend?, command?, outDir? }`. Calls the core `transcribe()`; returns the transcript for single/joined runs, or `{ mode: "segmented", outDir, segments, files, manifest?, merged? }` for segmented runs. When `outDir` is omitted it uses the server's `--out-dir`; a per-call `outDir` overrides it.
+- `transcribe` — args `{ path, language?, prompt?, model?, backend?, command?, chunking?, outDir? }`. Calls the core `transcribe()`; returns the transcript for single/joined runs, or `{ mode: "segmented", outDir, segments, files, manifest?, merged? }` for segmented runs. When `outDir` is omitted it uses the server's `--out-dir`; a per-call `outDir` overrides it.
 - `transcribe_plan` — args `{ path, targetSeconds?, maxSeconds?, overlapSeconds?, minSegmentSeconds?, silenceWindowFraction?, silenceDb?, silenceDur? }`. Returns the segmentation plan from `previewInput()` and never contacts the API.
 
 While `transcribe` runs, the server emits `notifications/progress` mapped from the core `ProgressEvent`s (with `total` = segment count once known) whenever the client requested progress. Errors are returned as MCP tool errors; an auth failure tells you to run `codex login`.
@@ -148,7 +149,7 @@ voxpipe serve --out-dir /var/voxpipe/out [--host 127.0.0.1] [--port 8787]
 Never exposes tokens, binds to `127.0.0.1` by default, and shuts down cleanly on `SIGINT`/`SIGTERM`.
 
 - `GET /healthz` → `{ "ok": true, "version": "0.1.0" }`.
-- `POST /transcribe` — accepts **either** `multipart/form-data` with a `file` part (optional `language`, `prompt`, `model`, `backend`, `command`, `outDir`) **or** JSON `{ path, language?, prompt?, model?, backend?, command?, outDir? }`. Uploads are written to a temp file and cleaned up; the request body is capped at 200 MB.
+- `POST /transcribe` — accepts **either** `multipart/form-data` with a `file` part (optional `language`, `prompt`, `model`, `backend`, `command`, `chunking`, `outDir`) **or** JSON `{ path, language?, prompt?, model?, backend?, command?, chunking?, outDir? }`. `chunking` is one of `auto`, `none`, or `silence`; any other value is rejected with HTTP 400. Uploads are written to a temp file and cleaned up; the request body is capped at 200 MB.
 
 Response format is controlled by `?format=`:
 
@@ -192,6 +193,7 @@ curl -N http://127.0.0.1:8787/transcribe \
 language = "zh"
 model = "gpt-4o-transcribe"
 backend = "chatgpt"
+chunking = "auto"
 target_seconds = 240
 max_seconds = 600
 overlap_seconds = 20
@@ -203,7 +205,7 @@ retries = 1
 # command = "whisper-cli -m ggml-base.bin -f {file} -l {language}"
 ```
 
-Precedence: **CLI > env (`VOXPIPE_*`) > config file > defaults**. Environment keys mirror the file: `VOXPIPE_LANGUAGE`, `VOXPIPE_MODEL`, `VOXPIPE_BACKEND`, `VOXPIPE_COMMAND`, `VOXPIPE_TARGET_SECONDS`, `VOXPIPE_MAX_SECONDS`, `VOXPIPE_OVERLAP_SECONDS`, `VOXPIPE_MIN_SEGMENT_SECONDS`, `VOXPIPE_SILENCE_WINDOW_FRACTION`, `VOXPIPE_SILENCE_DB`, `VOXPIPE_SILENCE_DUR`, `VOXPIPE_RETRIES`, `VOXPIPE_CONFIG`.
+Precedence: **CLI > env (`VOXPIPE_*`) > config file > defaults**. Environment keys mirror the file: `VOXPIPE_LANGUAGE`, `VOXPIPE_MODEL`, `VOXPIPE_BACKEND`, `VOXPIPE_COMMAND`, `VOXPIPE_CHUNKING`, `VOXPIPE_TARGET_SECONDS`, `VOXPIPE_MAX_SECONDS`, `VOXPIPE_OVERLAP_SECONDS`, `VOXPIPE_MIN_SEGMENT_SECONDS`, `VOXPIPE_SILENCE_WINDOW_FRACTION`, `VOXPIPE_SILENCE_DB`, `VOXPIPE_SILENCE_DUR`, `VOXPIPE_RETRIES`, `VOXPIPE_CONFIG`.
 
 ## Backends / plugins
 
@@ -216,6 +218,20 @@ voxpipe talk.mp3 --backend command \
 ```
 
 Non-zero exit from the command is an error. Placeholders are replaced per argument (quotes are respected).
+
+### Chunking policy
+
+The core owns the chunking mechanism (ffmpeg extract/slice/silence/overlap/merge/resume); each backend only declares a **policy** — a chunking mode plus optional input limits. Users override the policy with `--chunking` (or `VOXPIPE_CHUNKING` / `chunking` in `config.toml`); an explicit value always wins over the backend default.
+
+| Backend | Default chunking | Declared limits |
+|---|---|---|
+| `chatgpt` | `silence` | `maxInputSeconds = 600`, `maxInputBytes = 20 MB` |
+| `command` | `none` (whole file) | none |
+| backend that declares nothing | `none` (whole file) | none |
+
+- `auto` — use the backend's declared policy (the default).
+- `none` — send the whole file in one request; still splits only if the backend declares a byte limit the input exceeds.
+- `silence` — prefer a cut at a silence near `--chunk-seconds`, never past `--max-seconds` (clamped to the backend's `maxInputSeconds`), falling back to blind cuts with overlap.
 
 ## Auth (read-only)
 

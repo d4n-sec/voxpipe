@@ -17,4 +17,4 @@ export function createBackend(name: string, config: BackendConfig = {}): Backend
 
 export { createChatGptBackend, resolveEndpoint } from "./chatgpt";
 export { createCommandBackend, splitCommand } from "./command";
-export type { Backend, BackendRequest } from "./types";
+export type { Backend, BackendLimits, BackendRequest, ChunkingMode } from "./types";

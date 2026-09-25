@@ -13,6 +13,10 @@ export function resolveEndpoint(env: Record<string, string | undefined> = proces
 export function createChatGptBackend(): Backend {
   return {
     name: "chatgpt",
+    // A single request is silently truncated for long audio (observed around
+    // ~14-15 min), so cut on silences and keep every request well under it.
+    chunking: "silence",
+    limits: { maxInputSeconds: 600, maxInputBytes: MAX_UPLOAD_BYTES },
     async transcribe(req: BackendRequest): Promise<string> {
       const credentials = loadCredentials();
       const bytes = await Bun.file(req.file).arrayBuffer();

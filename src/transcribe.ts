@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { MAX_UPLOAD_BYTES } from "./backends/chatgpt";
-import type { BackendRequest } from "./backends/types";
+import type { Backend, BackendLimits, BackendRequest, ChunkingMode } from "./backends/types";
 import { isRetryable } from "./errors";
 import { detectSilences, extractAudio, extractSegment, probeDuration } from "./ffmpeg";
 import { joinTranscripts, writeSegmentedOutput } from "./output";
@@ -36,6 +36,8 @@ export type PreviewOptions = {
   silences?: Silence[];
   keep?: boolean;
   resolveDuration?: (audio: string) => number;
+  chunking?: ChunkingMode;
+  limits?: BackendLimits;
 };
 
 export type PreviewResult = {
@@ -81,11 +83,40 @@ async function requestWithRetry(
   throw lastError;
 }
 
+/** The backend declares its preferred strategy; an explicit override wins. */
+export function resolveChunking(backend: Backend, override?: ChunkingMode): ChunkingMode {
+  if (override) return override;
+  if (backend.chunking) return backend.chunking;
+  return backend.limits?.maxInputSeconds ? "silence" : "none";
+}
+
+/**
+ * Pure decision about whether a run needs to be split, given the backend's
+ * declared policy and an optional user override.
+ */
+export function decideChunking(
+  backend: Backend,
+  override: ChunkingMode | undefined,
+  sizeBytes: number,
+  duration: number,
+  targetSeconds: number,
+): { chunking: ChunkingMode; needsChunks: boolean } {
+  const chunking = resolveChunking(backend, override);
+  const limits = backend.limits ?? {};
+  const maxInputBytes = limits.maxInputBytes;
+  const needsChunks =
+    chunking === "none"
+      ? maxInputBytes !== undefined && sizeBytes > maxInputBytes
+      : sizeBytes > (maxInputBytes ?? MAX_UPLOAD_BYTES) || (duration > 0 && duration > targetSeconds);
+  return { chunking, needsChunks };
+}
+
 export async function transcribe(input: string, options: TranscribeOptions): Promise<InputResult> {
   if (!existsSync(input)) throw new Error(`Input not found: ${input}`);
 
   const progress = options.onProgress ?? noopProgress;
-  const segmentOptions = options.segment;
+  const segmentOptions = { ...options.segment };
+  const limits = options.backend.limits ?? {};
   const work = mkdtempSync(join(tmpdir(), "voxpipe-"));
 
   try {
@@ -95,7 +126,18 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
     const duration = options.resolveDuration ? options.resolveDuration(audio) : probeDuration(audio);
     progress({ type: "probe", duration, sizeBytes: size });
 
-    if (size <= MAX_UPLOAD_BYTES && (duration === 0 || duration <= segmentOptions.targetSeconds)) {
+    const { chunking, needsChunks } = decideChunking(
+      options.backend,
+      options.chunking,
+      size,
+      duration,
+      segmentOptions.targetSeconds,
+    );
+    if (chunking === "silence" && limits.maxInputSeconds) {
+      segmentOptions.maxSeconds = Math.min(segmentOptions.maxSeconds, limits.maxInputSeconds);
+    }
+
+    if (!needsChunks) {
       progress({ type: "plan", mode: "single", fallback: false, segmentCount: 1 });
       const text = (
         await requestWithRetry(
@@ -234,7 +276,21 @@ export function previewInput(input: string, options: PreviewOptions): PreviewRes
     const size = statSync(audio).size;
     const duration = options.resolveDuration ? options.resolveDuration(audio) : probeDuration(audio);
 
-    if (size <= MAX_UPLOAD_BYTES && (duration === 0 || duration <= options.segment.targetSeconds)) {
+    const backend: Backend = {
+      name: "preview",
+      transcribe: async () => "",
+      chunking: options.chunking,
+      limits: options.limits,
+    };
+    const { needsChunks } = decideChunking(
+      backend,
+      options.chunking,
+      size,
+      duration,
+      options.segment.targetSeconds,
+    );
+
+    if (!needsChunks) {
       return {
         file: basename(input),
         duration: Number(duration.toFixed(1)),

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { AuthError } from "../errors";
+import type { ChunkingConfig } from "../config";
 import { runTranscribe, type CoreArgs, type TranscribeOutcome } from "../service";
 import type { ProgressEvent } from "../types";
 import { VERSION } from "../version";
@@ -26,6 +27,16 @@ function optional(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+const CHUNKING_VALUES = new Set<ChunkingConfig>(["auto", "none", "silence"]);
+
+function chunkingField(value: unknown): ChunkingConfig | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || !CHUNKING_VALUES.has(value as ChunkingConfig)) {
+    throw new HttpError(400, `invalid \`chunking\`: expected one of auto, none, silence`);
+  }
+  return value as ChunkingConfig;
+}
+
 type Prepared = { args: CoreArgs; cleanup: () => void };
 
 async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string): Promise<Prepared> {
@@ -39,6 +50,7 @@ async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string
     const upload = form.get("file");
     if (!(upload instanceof File)) throw new HttpError(400, "multipart field `file` is required");
     const outDir = field(form, "outDir") ?? defaultOutDir;
+    const chunking = chunkingField(form.get("chunking"));
     const ext = extname(upload.name).replace(/[^A-Za-z0-9.]/g, "") || ".bin";
     const dir = mkdtempSync(join(tmpdir(), "voxpipe-upload-"));
     const target = join(dir, `upload${ext}`);
@@ -56,6 +68,7 @@ async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string
         model: field(form, "model"),
         backend: field(form, "backend"),
         command: field(form, "command"),
+        chunking,
         outDir,
       },
       cleanup: () => rmSync(dir, { recursive: true, force: true }),
@@ -73,6 +86,7 @@ async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string
   const path = optional(obj.path);
   if (!path) throw new HttpError(400, "`path` is required");
   const outDir = optional(obj.outDir) ?? defaultOutDir;
+  const chunking = chunkingField(obj.chunking);
   return {
     args: {
       path,
@@ -81,6 +95,7 @@ async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string
       model: optional(obj.model),
       backend: optional(obj.backend),
       command: optional(obj.command),
+      chunking,
       outDir,
     },
     cleanup: () => {},

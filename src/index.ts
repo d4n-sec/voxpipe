@@ -1,6 +1,6 @@
 export * from "./types";
 
-export { transcribe, previewInput } from "./transcribe";
+export { transcribe, previewInput, resolveChunking } from "./transcribe";
 export type { PreviewOptions, PreviewResult } from "./transcribe";
 
 export {

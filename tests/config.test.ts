@@ -61,3 +61,20 @@ test("falls back to defaults when no file or env is present", () => {
   const config = loadConfig({ path: "/nonexistent/voxpipe/config.toml", env: {} });
   expect(config).toEqual(defaultConfig());
 });
+
+test("chunking defaults to auto and follows CLI > env > file", () => {
+  expect(defaultConfig().chunking).toBe("auto");
+
+  const dir = mkdtempSync(join(tmpdir(), "voxpipe-config-"));
+  const path = join(dir, "config.toml");
+  try {
+    writeFileSync(path, ['chunking = "silence"', ""].join("\n"));
+    expect(loadConfig({ path, env: {} }).chunking).toBe("silence");
+    expect(loadConfig({ path, env: { VOXPIPE_CHUNKING: "none" } }).chunking).toBe("none");
+    expect(
+      loadConfig({ path, env: { VOXPIPE_CHUNKING: "none" }, cli: { chunking: "silence" } }).chunking,
+    ).toBe("silence");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

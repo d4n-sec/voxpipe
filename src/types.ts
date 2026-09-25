@@ -44,6 +44,8 @@ export type TranscribeOptions = {
   silenceDur?: number;
   silences?: Silence[];
   keep?: boolean;
+  /** Override the backend's default chunking mode. */
+  chunking?: import("./backends/types").ChunkingMode;
 };
 
 export type SegmentResult = SegmentPlan & { text: string };
