@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -10,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -28,17 +31,40 @@ jobs:
           sha256sum voxpipe-* > SHA256SUMS
           cat SHA256SUMS
       - name: Publish platform packages
+        if: env.NPM_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for dir in dist/npm/@d4n-sec/voxpipe-*; do
-            echo "publishing $dir"
-            npm publish "$dir" --access public
+          set -e
+          for dir in dist/npm/@d4n-sec/voxpipe-darwin-arm64 \
+                     dist/npm/@d4n-sec/voxpipe-darwin-x64 \
+                     dist/npm/@d4n-sec/voxpipe-linux-x64 \
+                     dist/npm/@d4n-sec/voxpipe-linux-arm64 \
+                     dist/npm/@d4n-sec/voxpipe-win32-x64; do
+            export DIR="$dir"
+            name=$(node -p "require(process.env.DIR + '/package.json').name")
+            version=$(node -p "require(process.env.DIR + '/package.json').version")
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "skip (already published): ${name}@${version}"
+            else
+              echo "publishing ${name}@${version}"
+              npm publish "$dir" --access public
+            fi
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Publish main package
-        run: npm publish --access public
+        if: env.NPM_TOKEN != ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "@d4n-sec/voxpipe@${version}" version >/dev/null 2>&1; then
+            echo "skip (already published): @d4n-sec/voxpipe@${version}"
+          else
+            npm publish --access public
+          fi
+      - name: npm publish skipped
+        if: env.NPM_TOKEN == ''
+        run: echo "NPM_TOKEN secret is not set; skipping npm publish. GitHub Release is still created."
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
