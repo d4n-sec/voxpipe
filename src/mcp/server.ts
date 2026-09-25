@@ -2,9 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { z } from "zod";
 import { AuthError } from "../errors";
 import { runPlan, runTranscribe, type CoreArgs, type PlanArgs } from "../service";
@@ -27,7 +24,7 @@ const transcribeSchema = {
   model: z.string().optional().describe("Model name, default gpt-4o-transcribe."),
   backend: z.enum(["chatgpt", "command"]).optional().describe("Backend to use; defaults to config."),
   command: z.string().optional().describe("Command backend template with {file} {language} {model}."),
-  outDir: z.string().optional().describe("Output directory for segmented runs."),
+  outDir: z.string().optional().describe("Output directory for segmented runs; defaults to the server's --out-dir."),
 };
 
 const planSchema = {
@@ -78,7 +75,7 @@ function errorResult(error: unknown) {
   return { content: [{ type: "text" as const, text: describeError(error) }], isError: true };
 }
 
-function createServer(): McpServer {
+function createServer(defaultOutDir: string): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: VERSION });
 
   server.registerTool(
@@ -110,21 +107,9 @@ function createServer(): McpServer {
 
       try {
         const coreArgs = { ...(args as CoreArgs) };
-        let tempOutDir: string | undefined;
-        if (!coreArgs.outDir || coreArgs.outDir.trim() === "") {
-          tempOutDir = mkdtempSync(join(tmpdir(), "voxpipe-mcp-"));
-          coreArgs.outDir = tempOutDir;
-        }
-        try {
-          const outcome = await runTranscribe(coreArgs, { onProgress });
-          if (tempOutDir && outcome.mode !== "segmented") {
-            rmSync(tempOutDir, { recursive: true, force: true });
-          }
-          return { content: [{ type: "text" as const, text: JSON.stringify(outcome, null, 2) }] };
-        } catch (error) {
-          if (tempOutDir) rmSync(tempOutDir, { recursive: true, force: true });
-          throw error;
-        }
+        if (!coreArgs.outDir || coreArgs.outDir.trim() === "") coreArgs.outDir = defaultOutDir;
+        const outcome = await runTranscribe(coreArgs, { onProgress });
+        return { content: [{ type: "text" as const, text: JSON.stringify(outcome, null, 2) }] };
       } catch (error) {
         return errorResult(error);
       }
@@ -152,12 +137,15 @@ function createServer(): McpServer {
   return server;
 }
 
-type ListenArgs = { http: boolean; host: string; port: number };
+export type ListenArgs = { http: boolean; host: string; port: number; outDir: string };
 
-function parseArgs(argv: string[], defaultPort: number): ListenArgs {
+const MCP_USAGE = "Usage: voxpipe mcp --out-dir <path> [--http] [--host 127.0.0.1] [--port 8765]";
+
+export function parseMcpArgs(argv: string[], defaultPort = 8765): ListenArgs {
   let http = false;
   let host = "127.0.0.1";
   let port = defaultPort;
+  let outDir: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--http") http = true;
@@ -165,21 +153,28 @@ function parseArgs(argv: string[], defaultPort: number): ListenArgs {
     else if (arg.startsWith("--host=")) host = arg.slice("--host=".length);
     else if (arg === "--port") port = Number(argv[++i]);
     else if (arg.startsWith("--port=")) port = Number(arg.slice("--port=".length));
+    else if (arg === "--out-dir" || arg === "--out" || arg === "-o") outDir = argv[++i];
+    else if (arg.startsWith("--out-dir=")) outDir = arg.slice("--out-dir=".length);
+    else if (arg.startsWith("--out=")) outDir = arg.slice("--out=".length);
     else if (arg === "-h" || arg === "--help") {
-      process.stdout.write("Usage: voxpipe mcp [--http] [--host 127.0.0.1] [--port 8765]\n");
+      process.stdout.write(MCP_USAGE + "\n");
       process.exit(0);
     } else throw new Error(`unknown argument: ${arg}`);
   }
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`invalid --port: ${port}`);
-  return { http, host, port };
+  if (!outDir || !outDir.trim()) {
+    process.stderr.write(`[voxpipe] mcp requires --out-dir\n${MCP_USAGE}\n`);
+    process.exit(2);
+  }
+  return { http, host, port, outDir };
 }
 
 function jsonRpcError(status: number, code: number, message: string): Response {
   return Response.json({ jsonrpc: "2.0", error: { code, message }, id: null }, { status });
 }
 
-async function runStdio(): Promise<void> {
-  const server = createServer();
+async function runStdio(outDir: string): Promise<void> {
+  const server = createServer(outDir);
   await server.connect(new StdioServerTransport());
   await new Promise<void>((resolve) => {
     const stop = () => {
@@ -190,7 +185,7 @@ async function runStdio(): Promise<void> {
   });
 }
 
-async function runHttp(host: string, port: number): Promise<void> {
+async function runHttp(host: string, port: number, outDir: string): Promise<void> {
   const sessions = new Map<string, { transport: WebStandardStreamableHTTPServerTransport; server: McpServer }>();
 
   const handle = async (req: Request): Promise<Response> => {
@@ -221,7 +216,7 @@ async function runHttp(host: string, port: number): Promise<void> {
       return jsonRpcError(400, -32000, "Bad Request: No valid session ID provided");
     }
 
-    const server = createServer();
+    const server = createServer(outDir);
     let transport: WebStandardStreamableHTTPServerTransport;
     transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => crypto.randomUUID(),
@@ -263,9 +258,9 @@ function reportError(error: unknown): void {
 }
 
 export async function runMcp(argv: string[]): Promise<void> {
-  const { http, host, port } = parseArgs(argv, 8765);
+  const { http, host, port, outDir } = parseMcpArgs(argv);
   process.on("uncaughtException", reportError);
   process.on("unhandledRejection", reportError);
-  if (http) await runHttp(host, port);
-  else await runStdio();
+  if (http) await runHttp(host, port, outDir);
+  else await runStdio(outDir);
 }

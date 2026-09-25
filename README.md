@@ -108,22 +108,24 @@ done
 ### Commands
 
 - `voxpipe clean [--dir <path>]` — remove `.voxpipe/` state directories (default: cwd).
-- `voxpipe mcp [--http] [--host 127.0.0.1] [--port 8765]` — MCP server (stdio by default, Streamable HTTP with `--http`).
+- `voxpipe mcp --out-dir <path> [--http] [--host 127.0.0.1] [--port 8765]` — MCP server (stdio by default, Streamable HTTP with `--http`; refuses to start without `--out-dir`).
 - `voxpipe serve --out-dir <path> [--host 127.0.0.1] [--port 8787]` — HTTP API for transcription (refuses to start without `--out-dir`).
 
 ## MCP server
 
 Runs an MCP server on top of the official `@modelcontextprotocol/sdk`, exposing two tools and streaming progress notifications while a transcription runs.
 
+`--out-dir` is **required at startup** (same rule as `serve`); without it the process prints the usage and exits with code 2, so segmented output can never land in the MCP client's working directory.
+
 ```bash
-voxpipe mcp                       # stdio transport (for MCP clients that spawn a process)
-voxpipe mcp --http                # Streamable HTTP at http://127.0.0.1:8765/mcp
-voxpipe mcp --http --host 0.0.0.0 --port 9000
+voxpipe mcp --out-dir /var/voxpipe/out                       # stdio transport (for MCP clients that spawn a process)
+voxpipe mcp --out-dir /var/voxpipe/out --http                # Streamable HTTP at http://127.0.0.1:8765/mcp
+voxpipe mcp --out-dir /var/voxpipe/out --http --host 0.0.0.0 --port 9000
 ```
 
 Tools:
 
-- `transcribe` — args `{ path, language?, prompt?, model?, backend?, command?, outDir? }`. Calls the core `transcribe()`; returns the transcript for single/joined runs, or `{ mode: "segmented", outDir, segments, files, manifest?, merged? }` for segmented runs. When `outDir` is omitted it defaults to a fresh temporary directory (never the MCP client's working directory); for segmented runs that path is returned in `outDir`.
+- `transcribe` — args `{ path, language?, prompt?, model?, backend?, command?, outDir? }`. Calls the core `transcribe()`; returns the transcript for single/joined runs, or `{ mode: "segmented", outDir, segments, files, manifest?, merged? }` for segmented runs. When `outDir` is omitted it uses the server's `--out-dir`; a per-call `outDir` overrides it.
 - `transcribe_plan` — args `{ path, targetSeconds?, maxSeconds?, overlapSeconds?, minSegmentSeconds?, silenceWindowFraction?, silenceDb?, silenceDur? }`. Returns the segmentation plan from `previewInput()` and never contacts the API.
 
 While `transcribe` runs, the server emits `notifications/progress` mapped from the core `ProgressEvent`s (with `total` = segment count once known) whenever the client requested progress. Errors are returned as MCP tool errors; an auth failure tells you to run `codex login`.
