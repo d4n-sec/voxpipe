@@ -4,3 +4,6 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# internal release runbook (not for public repo)
+RELEASE.md
