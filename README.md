@@ -23,20 +23,21 @@ Turn video/audio into text from the command line. Audio is sent to the ChatGPT (
 
 ## Install
 
-Once published to npm, the CLI ships as a small Node launcher plus per-platform
-prebuilt binaries (declared as `optionalDependencies`, so npm installs only the
-one matching your OS/CPU):
+The CLI ships as a small Node launcher plus per-platform prebuilt binaries
+(declared as `optionalDependencies`, so npm installs only the one matching your
+OS/CPU):
 
 ```bash
 npm i -g @d4n-sec/voxpipe     # global install
 npx @d4n-sec/voxpipe --help   # one-off, no global install
 ```
 
-The launcher resolves `@d4n-sec/voxpipe-<platform>-<arch>` and runs its bundled
-binary; if no prebuilt binary is available for your platform it falls back to
-running the TypeScript entry with [Bun](https://bun.sh) when `bun` is on `PATH`.
+At runtime the launcher **prefers a local [Bun](https://bun.sh) runtime**
+(authoritative source, always in sync with the installed version) and only falls
+back to the prebuilt `@d4n-sec/voxpipe-<platform>-<arch>` binary when `bun` is not
+on `PATH`.
 
-> **Until the packages are published to npm**, install from source:
+From source:
 
 ```bash
 git clone https://github.com/d4n-sec/voxpipe.git && cd voxpipe

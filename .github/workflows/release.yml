@@ -23,6 +23,7 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
       - run: bun install
+      - run: bun run sync:optional-deps
       - run: bun run build
       - run: bun run scripts/pack-platforms.ts
       - name: Generate checksums

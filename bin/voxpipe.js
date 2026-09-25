@@ -69,23 +69,26 @@ function run(command, commandArgs) {
 const key = platformKey();
 const binary = SUPPORTED.has(key) ? resolvePlatformBin(key) : undefined;
 
-if (binary) {
-  run(binary, args);
-} else if (hasBun()) {
+// Prefer the local Bun runtime (authoritative source, always in sync with the
+// installed version). Only fall back to the prebuilt platform binary when Bun
+// is not available, so `npx @d4n-sec/voxpipe` still works on machines without it.
+if (hasBun()) {
   run("bun", ["run", join(pkgRoot, "bin", "voxpipe.ts"), ...args]);
+} else if (binary) {
+  run(binary, args);
 } else {
   const lines = [
-    `[voxpipe] no prebuilt binary available for ${key}.`,
+    `[voxpipe] no Bun runtime and no prebuilt binary available for ${key}.`,
     SUPPORTED.has(key)
       ? `  The optional package @d4n-sec/voxpipe-${key} is not installed.`
       : "  This platform has no published prebuilt package.",
     "",
-    "Option 1: reinstall so npm can fetch the optional platform package:",
-    "  npm i -g @d4n-sec/voxpipe",
-    "",
-    "Option 2: install Bun and run the TypeScript entry directly:",
+    "Option 1: install Bun and run the TypeScript entry directly:",
     "  npm i -g bun",
     `  bun run ${join(pkgRoot, "bin", "voxpipe.ts")} --help`,
+    "",
+    "Option 2: reinstall so npm can fetch the optional platform package:",
+    "  npm i -g @d4n-sec/voxpipe",
   ];
   process.stderr.write(lines.join("\n") + "\n");
   process.exit(1);

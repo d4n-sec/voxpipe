@@ -1,6 +1,6 @@
 {
   "name": "@d4n-sec/voxpipe",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Transcribe video/audio to text via a ChatGPT/Codex subscription, with silence-aware chunking for long files.",
   "type": "module",
   "bin": {
@@ -19,6 +19,7 @@
     "typecheck": "bunx tsc --noEmit",
     "build": "bun run scripts/build.ts",
     "pack:platforms": "bun run scripts/pack-platforms.ts",
+    "sync:optional-deps": "bun run scripts/sync-optional-deps.ts",
     "mcp": "bun run bin/voxpipe.ts mcp",
     "serve": "bun run bin/voxpipe.ts serve"
   },
@@ -54,11 +55,11 @@
     "typescript": "^5.6.0"
   },
   "optionalDependencies": {
-    "@d4n-sec/voxpipe-darwin-arm64": "0.1.0",
-    "@d4n-sec/voxpipe-darwin-x64": "0.1.0",
-    "@d4n-sec/voxpipe-linux-arm64": "0.1.0",
-    "@d4n-sec/voxpipe-linux-x64": "0.1.0",
-    "@d4n-sec/voxpipe-win32-x64": "0.1.0"
+    "@d4n-sec/voxpipe-darwin-arm64": "0.1.2",
+    "@d4n-sec/voxpipe-darwin-x64": "0.1.2",
+    "@d4n-sec/voxpipe-linux-arm64": "0.1.2",
+    "@d4n-sec/voxpipe-linux-x64": "0.1.2",
+    "@d4n-sec/voxpipe-win32-x64": "0.1.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",
