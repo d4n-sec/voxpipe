@@ -58,7 +58,7 @@ jobs:
                      dist/npm/@d4n-sec/voxpipe-linux-x64 \
                      dist/npm/@d4n-sec/voxpipe-linux-arm64 \
                      dist/npm/@d4n-sec/voxpipe-win32-x64; do
-            export DIR="$dir"
+            export DIR="$PWD/$dir"
             name=$(node -p "require(process.env.DIR + '/package.json').name")
             version=$(node -p "require(process.env.DIR + '/package.json').version")
             publish "$dir" "$name" "$version"
