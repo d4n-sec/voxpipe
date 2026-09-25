@@ -28,7 +28,7 @@ function optional(value: unknown): string | undefined {
 
 type Prepared = { args: CoreArgs; cleanup: () => void };
 
-async function prepare(req: Request, isMultipart: boolean): Promise<Prepared> {
+async function prepare(req: Request, isMultipart: boolean, defaultOutDir: string): Promise<Prepared> {
   if (isMultipart) {
     let form: { get(key: string): unknown };
     try {
@@ -38,8 +38,7 @@ async function prepare(req: Request, isMultipart: boolean): Promise<Prepared> {
     }
     const upload = form.get("file");
     if (!(upload instanceof File)) throw new HttpError(400, "multipart field `file` is required");
-    const outDir = field(form, "outDir");
-    if (!outDir) throw new HttpError(400, "outDir is required for serve mode");
+    const outDir = field(form, "outDir") ?? defaultOutDir;
     const ext = extname(upload.name).replace(/[^A-Za-z0-9.]/g, "") || ".bin";
     const dir = mkdtempSync(join(tmpdir(), "voxpipe-upload-"));
     const target = join(dir, `upload${ext}`);
@@ -73,8 +72,7 @@ async function prepare(req: Request, isMultipart: boolean): Promise<Prepared> {
   const obj = body as Record<string, unknown>;
   const path = optional(obj.path);
   if (!path) throw new HttpError(400, "`path` is required");
-  const outDir = optional(obj.outDir);
-  if (!outDir) throw new HttpError(400, "outDir is required for serve mode");
+  const outDir = optional(obj.outDir) ?? defaultOutDir;
   return {
     args: {
       path,
@@ -138,7 +136,7 @@ function sseResponse(run: (emit: (event: ProgressEvent) => void, signal: AbortSi
   });
 }
 
-async function handleTranscribe(req: Request, url: URL): Promise<Response> {
+async function handleTranscribe(req: Request, url: URL, outDir: string): Promise<Response> {
   const contentLength = Number(req.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
     return Response.json({ error: "request body too large" }, { status: 413 });
@@ -157,7 +155,7 @@ async function handleTranscribe(req: Request, url: URL): Promise<Response> {
   try {
     if (wantsSse) {
       return sseResponse(async (emit, signal) => {
-        const prepared = await prepare(req, isMultipart);
+        const prepared = await prepare(req, isMultipart, outDir);
         try {
           return await runTranscribe(prepared.args, { onProgress: emit, signal });
         } finally {
@@ -166,7 +164,7 @@ async function handleTranscribe(req: Request, url: URL): Promise<Response> {
       });
     }
 
-    const prepared = await prepare(req, isMultipart);
+    const prepared = await prepare(req, isMultipart, outDir);
     try {
       const outcome = await runTranscribe(prepared.args);
       const format = url.searchParams.get("format") ?? "json";
@@ -182,27 +180,37 @@ async function handleTranscribe(req: Request, url: URL): Promise<Response> {
   }
 }
 
-type ListenArgs = { host: string; port: number };
+export type ServeArgs = { host: string; port: number; outDir: string };
 
-function parseArgs(argv: string[], defaultPort: number): ListenArgs {
+const SERVE_USAGE = "Usage: voxpipe serve --out-dir <path> [--host 127.0.0.1] [--port 8787]";
+
+export function parseServeArgs(argv: string[], defaultPort = 8787): ServeArgs {
   let host = "127.0.0.1";
   let port = defaultPort;
+  let outDir: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--host") host = argv[++i] ?? host;
     else if (arg.startsWith("--host=")) host = arg.slice("--host=".length);
     else if (arg === "--port") port = Number(argv[++i]);
     else if (arg.startsWith("--port=")) port = Number(arg.slice("--port=".length));
+    else if (arg === "--out-dir" || arg === "--out" || arg === "-o") outDir = argv[++i];
+    else if (arg.startsWith("--out-dir=")) outDir = arg.slice("--out-dir=".length);
+    else if (arg.startsWith("--out=")) outDir = arg.slice("--out=".length);
     else if (arg === "-h" || arg === "--help") {
-      process.stdout.write("Usage: voxpipe serve [--host 127.0.0.1] [--port 8787]\n");
+      process.stdout.write(SERVE_USAGE + "\n");
       process.exit(0);
     } else throw new Error(`unknown argument: ${arg}`);
   }
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`invalid --port: ${port}`);
-  return { host, port };
+  if (!outDir || !outDir.trim()) {
+    process.stderr.write(`[voxpipe] serve requires --out-dir\n${SERVE_USAGE}\n`);
+    process.exit(2);
+  }
+  return { host, port, outDir };
 }
 
-export function startServer(host: string, port: number) {
+export function startServer(host: string, port: number, outDir: string) {
   return Bun.serve({
     hostname: host,
     port,
@@ -213,7 +221,7 @@ export function startServer(host: string, port: number) {
         return Response.json({ ok: true, version: VERSION });
       }
       if (req.method === "POST" && url.pathname === "/transcribe") {
-        return handleTranscribe(req, url);
+        return handleTranscribe(req, url, outDir);
       }
       return new Response("Not Found", { status: 404 });
     },
@@ -221,9 +229,9 @@ export function startServer(host: string, port: number) {
 }
 
 export async function runServe(argv: string[]): Promise<void> {
-  const { host, port } = parseArgs(argv, 8787);
-  const server = startServer(host, port);
-  process.stderr.write(`[voxpipe] serve listening on http://${host}:${server.port}\n`);
+  const { host, port, outDir } = parseServeArgs(argv);
+  const server = startServer(host, port, outDir);
+  process.stderr.write(`[voxpipe] serve listening on http://${host}:${server.port} (outDir=${outDir})\n`);
 
   await new Promise<void>((resolve) => {
     const stop = () => {

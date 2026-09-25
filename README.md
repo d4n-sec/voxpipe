@@ -109,7 +109,7 @@ done
 
 - `voxpipe clean [--dir <path>]` — remove `.voxpipe/` state directories (default: cwd).
 - `voxpipe mcp [--http] [--host 127.0.0.1] [--port 8765]` — MCP server (stdio by default, Streamable HTTP with `--http`).
-- `voxpipe serve [--host 127.0.0.1] [--port 8787]` — HTTP API for transcription.
+- `voxpipe serve --out-dir <path> [--host 127.0.0.1] [--port 8787]` — HTTP API for transcription (refuses to start without `--out-dir`).
 
 ## MCP server
 
@@ -137,13 +137,15 @@ Example client entry (stdio):
 ## HTTP API
 
 ```bash
-voxpipe serve [--host 127.0.0.1] [--port 8787]
+voxpipe serve --out-dir /var/voxpipe/out [--host 127.0.0.1] [--port 8787]
 ```
+
+`--out-dir` is **required at startup**; without it the process prints the usage and exits with code 2, so segmented output can never land in the server's cwd. A request may still pass `outDir` to override the server default for that request.
 
 Never exposes tokens, binds to `127.0.0.1` by default, and shuts down cleanly on `SIGINT`/`SIGTERM`.
 
 - `GET /healthz` → `{ "ok": true, "version": "0.1.0" }`.
-- `POST /transcribe` — accepts **either** `multipart/form-data` with a `file` part (optional `language`, `prompt`, `model`, `backend`, `command`) **or** JSON `{ path, language?, prompt?, model?, backend?, command? }`. An explicit **`outDir` is required** (as a non-empty text part or JSON field) so serve mode never writes segmented output into the server's cwd; a missing `outDir` returns `400 { "error": "outDir is required for serve mode" }`. Uploads are written to a temp file and cleaned up; the request body is capped at 200 MB.
+- `POST /transcribe` — accepts **either** `multipart/form-data` with a `file` part (optional `language`, `prompt`, `model`, `backend`, `command`, `outDir`) **or** JSON `{ path, language?, prompt?, model?, backend?, command?, outDir? }`. Uploads are written to a temp file and cleaned up; the request body is capped at 200 MB.
 
 Response format is controlled by `?format=`:
 
