@@ -1,0 +1,66 @@
+{
+  "name": "@d4n-sec/voxpipe",
+  "version": "0.1.0",
+  "description": "Transcribe video/audio to text via a ChatGPT/Codex subscription, with silence-aware chunking for long files.",
+  "type": "module",
+  "bin": {
+    "voxpipe": "./bin/voxpipe.js"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "scripts": {
+    "dev": "bun run bin/voxpipe.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "build": "bun run scripts/build.ts",
+    "pack:platforms": "bun run scripts/pack-platforms.ts",
+    "mcp": "bun run bin/voxpipe.ts mcp",
+    "serve": "bun run bin/voxpipe.ts serve"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "transcription",
+    "speech-to-text",
+    "audio",
+    "video",
+    "codex",
+    "chatgpt",
+    "cli",
+    "mcp"
+  ],
+  "license": "MIT",
+  "author": "d4n-sec",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d4n-sec/voxpipe.git"
+  },
+  "homepage": "https://github.com/d4n-sec/voxpipe",
+  "bugs": {
+    "url": "https://github.com/d4n-sec/voxpipe/issues"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "optionalDependencies": {
+    "@d4n-sec/voxpipe-darwin-arm64": "0.1.0",
+    "@d4n-sec/voxpipe-darwin-x64": "0.1.0",
+    "@d4n-sec/voxpipe-linux-arm64": "0.1.0",
+    "@d4n-sec/voxpipe-linux-x64": "0.1.0",
+    "@d4n-sec/voxpipe-win32-x64": "0.1.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "zod": "^4.6.5"
+  }
+}

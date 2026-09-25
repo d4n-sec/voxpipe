@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: bun install
+      - run: bun run build
+      - run: bun run scripts/pack-platforms.ts
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum voxpipe-* > SHA256SUMS
+          cat SHA256SUMS
+      - name: Publish platform packages
+        run: |
+          for dir in dist/npm/@d4n-sec/voxpipe-*; do
+            echo "publishing $dir"
+            npm publish "$dir" --access public
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish main package
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/voxpipe-*
+            dist/SHA256SUMS
+          generate_release_notes: true
