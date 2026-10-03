@@ -86,6 +86,24 @@ test("decideChunking: an explicit override forces the mode", () => {
   expect(decideChunking(backend, "silence", 1000, 700, 240).needsChunks).toBe(true);
 });
 
+test("decideChunking: silence respects the backend duration ceiling above the target", () => {
+  const backend = fake({ chunking: "silence", limits: { maxInputSeconds: 600 } });
+  expect(decideChunking(backend, undefined, 1000, 900, 1200).needsChunks).toBe(true);
+  expect(decideChunking(backend, "none", 1000, 900, 1200).needsChunks).toBe(false);
+});
+
+test.skipIf(!hasFfmpeg)("preview clamps duration to the backend ceiling and keeps every tail within it", () => {
+  const preview = withTone((input) => previewInput(input, {
+    segment: { ...DEFAULT_SEGMENT_OPTIONS, targetSeconds: 1200, maxSeconds: 1200, overlapSeconds: 0 },
+    limits: { maxInputSeconds: 600 },
+    resolveDuration: () => 605,
+    silences: [],
+  }));
+  expect(preview.segments).toHaveLength(2);
+  expect(preview.segments.every((segment) => segment.duration <= 600)).toBe(true);
+  expect(preview.segments[1].end).toBe(605);
+});
+
 test.skipIf(!hasFfmpeg)("previewInput with chunking none stays single for long audio", () => {
   const preview = withTone((input) =>
     previewInput(input, {

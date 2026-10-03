@@ -13,6 +13,7 @@ export function resolveEndpoint(env: Record<string, string | undefined> = proces
 export function createChatGptBackend(): Backend {
   return {
     name: "chatgpt",
+    cacheKey: resolveEndpoint(),
     // A single request is silently truncated for long audio (observed around
     // ~14-15 min), so cut on silences and keep every request well under it.
     chunking: "silence",

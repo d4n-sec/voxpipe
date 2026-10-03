@@ -135,7 +135,7 @@ While `transcribe` runs, the server emits `notifications/progress` mapped from t
 Example client entry (stdio):
 
 ```json
-{ "mcpServers": { "voxpipe": { "command": "voxpipe", "args": ["mcp"] } } }
+{ "mcpServers": { "voxpipe": { "command": "voxpipe", "args": ["mcp", "--out-dir", "/var/voxpipe/out"] } } }
 ```
 
 ## HTTP API
@@ -147,6 +147,8 @@ voxpipe serve --out-dir /var/voxpipe/out [--host 127.0.0.1] [--port 8787]
 `--out-dir` is **required at startup**; without it the process prints the usage and exits with code 2, so segmented output can never land in the server's cwd. A request may still pass `outDir` to override the server default for that request.
 
 Never exposes tokens, binds to `127.0.0.1` by default, and shuts down cleanly on `SIGINT`/`SIGTERM`.
+
+HTTP API and MCP HTTP access must be limited to trusted clients. These servers have no authentication; a request can select the `command` backend and supply a command that runs with the server process's permissions. `--out-dir` is an output default, not a filesystem access boundary. Public network deployment requires an access-control layer before the server.
 
 - `GET /healthz` → `{ "ok": true, "version": "0.1.0" }`.
 - `POST /transcribe` — accepts **either** `multipart/form-data` with a `file` part (optional `language`, `prompt`, `model`, `backend`, `command`, `chunking`, `outDir`) **or** JSON `{ path, language?, prompt?, model?, backend?, command?, chunking?, outDir? }`. `chunking` is one of `auto`, `none`, or `silence`; any other value is rejected with HTTP 400. Uploads are written to a temp file and cleaned up; the request body is capped at 200 MB.

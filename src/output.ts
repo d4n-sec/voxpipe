@@ -36,12 +36,12 @@ export function writeSegmentedOutput(
       file: name,
     });
   }
+  const merge = mergeOverlapping(result.segments.map((segment) => segment.text));
   writeFileSync(
     join(dir, "manifest.json"),
-    JSON.stringify({ input: basename(input), segments: manifest }, null, 2) + "\n",
+    JSON.stringify({ input: basename(input), segments: manifest, merged: merge.merged ? "merged.txt" : null }, null, 2) + "\n",
   );
 
-  const merge = mergeOverlapping(result.segments.map((segment) => segment.text));
   if (merge.merged) writeFileSync(join(dir, "merged.txt"), merge.text + "\n");
   return { dir, merged: merge.merged };
 }

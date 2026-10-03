@@ -330,7 +330,7 @@ async function runTranscribe(argv: string[]): Promise<void> {
   }
 
   if (opts.out && plain.length > 0) {
-    if (plain.length === 1) {
+    if (opts.inputs.length === 1) {
       writeFileSync(opts.out, plain[0].text + "\n");
       console.error(`[voxpipe] wrote ${opts.out}`);
     } else {

@@ -44,6 +44,7 @@ export function createCommandBackend(command: string): Backend {
   if (!command.trim()) throw new Error("backend `command` requires --command <cmd>");
   return {
     name: "command",
+    cacheKey: command,
     // A local tool has no known limit, so hand it the whole file by default.
     // Users can still force chunking with --chunking silence.
     chunking: "none",

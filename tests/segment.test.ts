@@ -44,12 +44,13 @@ test("takes the remaining tail as the final non-overlapped segment", () => {
   expect(segments[1]).toMatchObject({ start: 300, end: 620, overlapped: false });
 });
 
-test("merges a tiny final segment into the previous one", () => {
+test("keeps a tiny final segment when merging would exceed the hard ceiling", () => {
   const options = { ...OPTIONS, targetSeconds: 240, maxSeconds: 240, overlapSeconds: 10 };
   const { segments } = planSegments(244, options, []);
 
-  expect(segments).toHaveLength(1);
-  expect(segments[0]).toMatchObject({ start: 0, end: 244, overlapped: true });
+  expect(segments).toHaveLength(2);
+  expect(segments.every((segment) => segment.end - segment.start <= options.maxSeconds)).toBe(true);
+  expect(segments[segments.length - 1].end).toBe(244);
 });
 
 test("last chunk is not overlapped even after fallback cuts", () => {

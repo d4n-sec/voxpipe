@@ -138,8 +138,8 @@ export function planSegments(
 
   if (segments.length > 1) {
     const last = segments[segments.length - 1];
-    if (last.end - last.start < minSeg) {
-      const previous = segments[segments.length - 2];
+    const previous = segments[segments.length - 2];
+    if (last.end - last.start < minSeg && last.end - previous.start <= maxChunk) {
       previous.end = last.end;
       segments.pop();
     }

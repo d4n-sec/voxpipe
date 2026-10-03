@@ -23,6 +23,8 @@ export interface BackendLimits {
 
 export interface Backend {
   readonly name: string;
+  /** Stable identity for settings that affect transcripts in resume state. */
+  readonly cacheKey?: string;
   transcribe(req: BackendRequest): Promise<string>;
   /** Declared by the backend so the core can pick a sensible default strategy. */
   readonly chunking?: ChunkingMode;

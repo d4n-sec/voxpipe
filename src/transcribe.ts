@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join } from "node:path";
 import { MAX_UPLOAD_BYTES } from "./backends/chatgpt";
@@ -25,6 +26,7 @@ type State = {
   input: string;
   inputSize: number;
   inputMtimeMs: number;
+  fingerprint: string;
   segments: SegmentPlan[];
   done: Record<number, string>;
 };
@@ -107,7 +109,8 @@ export function decideChunking(
   const needsChunks =
     chunking === "none"
       ? maxInputBytes !== undefined && sizeBytes > maxInputBytes
-      : sizeBytes > (maxInputBytes ?? MAX_UPLOAD_BYTES) || (duration > 0 && duration > targetSeconds);
+      : sizeBytes > (maxInputBytes ?? MAX_UPLOAD_BYTES) ||
+        (duration > 0 && duration > Math.min(targetSeconds, limits.maxInputSeconds ?? Infinity));
   return { chunking, needsChunks };
 }
 
@@ -131,7 +134,7 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
       options.chunking,
       size,
       duration,
-      segmentOptions.targetSeconds,
+      Math.min(segmentOptions.targetSeconds, segmentOptions.maxSeconds),
     );
     if (chunking === "silence" && limits.maxInputSeconds) {
       segmentOptions.maxSeconds = Math.min(segmentOptions.maxSeconds, limits.maxInputSeconds);
@@ -178,6 +181,14 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
     let statePath: string | undefined;
     const stateDir = mode === "segmented" ? options.stateDir ?? join(outDir, ".voxpipe") : undefined;
     if (mode === "segmented" && stateDir) {
+      const fingerprint = createHash("sha256").update(JSON.stringify({
+        backend: options.backend.name,
+        backendSettings: options.backend.cacheKey,
+        language: options.language,
+        prompt: options.prompt,
+        model: options.model,
+        segments: plans,
+      })).digest("hex");
       statePath = join(stateDir, "state.json");
       const inputStat = statSync(input);
       if (existsSync(statePath)) {
@@ -186,7 +197,8 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
           if (
             parsed.input === input &&
             parsed.inputSize === inputStat.size &&
-            parsed.inputMtimeMs === inputStat.mtimeMs
+            parsed.inputMtimeMs === inputStat.mtimeMs &&
+            parsed.fingerprint === fingerprint
           ) {
             state = parsed;
           }
@@ -199,12 +211,10 @@ export async function transcribe(input: string, options: TranscribeOptions): Pro
           input,
           inputSize: inputStat.size,
           inputMtimeMs: inputStat.mtimeMs,
+          fingerprint,
           segments: plans,
           done: {},
         };
-      } else if (state.segments.length !== plans.length) {
-        state.segments = plans;
-        state.done = {};
       }
     }
 
@@ -282,12 +292,12 @@ export function previewInput(input: string, options: PreviewOptions): PreviewRes
       chunking: options.chunking,
       limits: options.limits,
     };
-    const { needsChunks } = decideChunking(
+    const { chunking, needsChunks } = decideChunking(
       backend,
       options.chunking,
       size,
       duration,
-      options.segment.targetSeconds,
+      Math.min(options.segment.targetSeconds, options.segment.maxSeconds),
     );
 
     if (!needsChunks) {
@@ -305,7 +315,11 @@ export function previewInput(input: string, options: PreviewOptions): PreviewRes
     const silences =
       options.silences ??
       detectSilences(audio, options.silenceDb ?? DEFAULT_SILENCE_DB, options.silenceDur ?? DEFAULT_SILENCE_DUR);
-    const { segments, fallback } = planSegments(duration, options.segment, silences);
+    const segment = { ...options.segment };
+    if (chunking === "silence" && options.limits?.maxInputSeconds) {
+      segment.maxSeconds = Math.min(segment.maxSeconds, options.limits.maxInputSeconds);
+    }
+    const { segments, fallback } = planSegments(duration, segment, silences);
     return {
       file: basename(input),
       duration: Number(duration.toFixed(1)),

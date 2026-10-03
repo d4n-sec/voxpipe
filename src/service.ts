@@ -1,9 +1,10 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadCredentials } from "./auth";
 import { createBackend } from "./backends";
 import { loadConfig, type ChunkingConfig, type VoxpipeConfig } from "./config";
 import { previewInput, resolveChunking, transcribe, type PreviewResult } from "./transcribe";
+import { segmentFileName } from "./output";
 import type { InputResult, Progress, SegmentOptions } from "./types";
 
 export type CoreArgs = {
@@ -63,16 +64,19 @@ function selectBackend(args: CoreArgs, config: VoxpipeConfig): ReturnType<typeof
 export function toOutcome(result: InputResult): TranscribeOutcome {
   if (result.mode !== "segmented") return { mode: result.mode, text: result.text };
   const outDir = result.outDir ?? "";
-  let files: string[] = [];
+  const files = result.segments.map(segmentFileName).filter((name) => existsSync(join(outDir, name)));
+  let merged: string | undefined;
   try {
-    files = readdirSync(outDir)
-      .filter((name) => name.endsWith(".txt"))
-      .sort();
+    const outputManifest = JSON.parse(readFileSync(join(outDir, "manifest.json"), "utf8"));
+    if (outputManifest.merged === "merged.txt" && existsSync(join(outDir, "merged.txt"))) {
+      merged = join(outDir, "merged.txt");
+      files.push("merged.txt");
+    }
   } catch {
-    files = [];
+    // Only manifest-owned merged output belongs to this run.
   }
+  files.sort();
   const manifest = existsSync(join(outDir, "manifest.json")) ? join(outDir, "manifest.json") : undefined;
-  const merged = existsSync(join(outDir, "merged.txt")) ? join(outDir, "merged.txt") : undefined;
   return { mode: "segmented", outDir, segments: result.segments.length, files, manifest, merged };
 }
 
